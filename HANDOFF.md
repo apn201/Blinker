@@ -11,18 +11,25 @@ A one-way optical data link. An M5Stack Atom Matrix (5x5 RGB LED, behind a
 diffuser) blinks colours. A webcam watches it. `pc_receiver.py` finds the
 device in the frame, reads the colours, and reconstructs text.
 
-Entry for element14's Project14 "Make a Connection".
+Entry for element14's Project14 "Make a Connection". Write-up:
+https://community.element14.com/challenges-projects/project14/b/make-a-connection/posts/blink_2d00_optical_2d00_one_2d00_way_2d00_communication_2d00_m5stack_2d00_atom_2d00_matrix
 
-Status: **works, imperfectly.** Full messages decode. It still loses lock or
-misreads occasionally in cluttered scenes. It is not finished.
+Status: **works, imperfectly.** Full messages decode at about 1.5 m indoors. It
+still loses lock or misreads occasionally in cluttered scenes. It is not
+finished.
 
-Files:
+The project is the two Python files. They are the reference implementation:
 
 | file | runs on | notes |
 |---|---|---|
 | `atom_matrix_sender.py` | the Atom, via UIFlow2 MicroPython | paste into the UIFlow2 **code editor**, not Blockly |
 | `pc_receiver.py` | PC | `pip install opencv-python numpy`, then `python pc_receiver.py` |
-| `android/` | Android phone | Kotlin/CameraX port of the receiver, see `android/README.md` |
+
+Bonus, added after the deadline was extended:
+
+| file | runs on | notes |
+|---|---|---|
+| `android/` | Android phone | Kotlin/CameraX port of `pc_receiver.py`, see `android/README.md`. Where it disagrees with the Python, the Python wins. |
 
 **Re-push the sender to the DEVICE whenever it changes.** Downloading it to the
 PC does nothing. This has caused confusion more than once — a screenshot showing
@@ -152,7 +159,7 @@ Sharing a threshold caused intermittent, seed-dependent failures.
 
 ## 6. Known-good settings
 
-Sender: `LINK_SPEED_MS = 250` (works; faster starts breaking up),
+Sender: `LINK_SPEED_MS = 250` or `350` (both tested; faster starts breaking up),
 `BRIGHTNESS = 12`–`45` (raise in bright daylight; hard cap 70, above that can
 damage the device), `CHUNK_SIZE = 8`.
 

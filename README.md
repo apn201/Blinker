@@ -1,23 +1,31 @@
 # Blinker — a one-way optical data link
 
-An M5Stack Atom Matrix blinks colours; a camera watches it and reconstructs the text.
+An M5Stack Atom Matrix blinks colours; a webcam watches it and reconstructs the text.
 No radio, no cable, no return channel — just a 5×5 LED matrix behind a diffuser and
 something that can see it.
 
-This repo has the sender and two receivers:
+Built as an entry for element14's Project14 "Make a Connection". The full write-up, with
+the reasoning behind every design decision, is on element14:
+**[Blinking at a webcam: a one-way optical data link with an M5Stack Atom Matrix](https://community.element14.com/challenges-projects/project14/b/make-a-connection/posts/blink_2d00_optical_2d00_one_2d00_way_2d00_communication_2d00_m5stack_2d00_atom_2d00_matrix)**
+
+## The project: two Python files
 
 | path | runs on | what it is |
 |---|---|---|
 | [`atom_matrix_sender.py`](atom_matrix_sender.py) | Atom Matrix (UIFlow2 MicroPython) | the transmitter |
-| [`pc_receiver.py`](pc_receiver.py) | PC with a webcam (Python + OpenCV) | the reference receiver |
-| [`android/`](android/) | Android phone (Kotlin + CameraX) | a port of the receiver, see [`android/README.md`](android/README.md) |
+| [`pc_receiver.py`](pc_receiver.py) | PC with a webcam (Python + OpenCV) | the receiver |
 | [`HANDOFF.md`](HANDOFF.md) | — | how it works and **what failed on real hardware** |
-| [`ANDROID_PORT_SPEC.md`](ANDROID_PORT_SPEC.md) | — | the spec the Android port was built from |
 
-Built as an entry for element14's Project14 "Make a Connection".
+That is the whole link. Everything else in the repo is extra.
 
-**Status: works, imperfectly.** Full messages decode, but the receivers still lose lock or
-misread now and then in cluttered scenes. See *Open problems* below.
+**Bonus:** [`android/`](android/) is a later port of the PC receiver to a native Android
+app (Kotlin + CameraX), built after the deadline was extended. It follows `pc_receiver.py`;
+where they disagree, the Python is correct. [`ANDROID_PORT_SPEC.md`](ANDROID_PORT_SPEC.md)
+is the spec it was built from.
+
+**Status: works, imperfectly.** Full messages decode at about 1.5 m indoors, but the
+receiver still loses lock or misreads now and then in cluttered scenes. It is a proof of
+concept, not a product. See *Open problems* below.
 
 ## How it works
 
@@ -36,14 +44,15 @@ default, so about 2 bits per second). The message is split into 8-byte chunks, e
 [idx][total][length][header crc8][payload crc8][payload bytes...]
 ```
 
-CRC-8 uses polynomial 0x07. The sender loops the message forever — the next lap is the
-retransmit. Which colour means 1 is deliberately **not** defined: the receivers decode both
-polarities in parallel and let the chunk CRC decide.
+CRC-8 uses polynomial 0x07. The matrix stays dark for 1200 ms between chunks. The sender
+loops the message forever — the next lap is the retransmit. A 30-byte message is 4 chunks,
+roughly 70 seconds per lap. Which colour means 1 is deliberately **not** defined: the
+receiver decodes both polarities in parallel and lets the chunk CRC decide.
 
-The receivers find the transmitter by what it *does*, not what it looks like. They look
-only at pixels that are blinking, learn the two colours from the transmitter itself rather
-than trusting fixed hues, and keep a persistent lock. [`HANDOFF.md`](HANDOFF.md) explains
-each stage and the specific failure it exists to prevent. Read section 5 before changing
+The receiver finds the transmitter by what it *does*, not what it looks like. It looks only
+at pixels that are blinking, learns the two colours from the transmitter itself rather than
+trusting fixed hues, and keeps a persistent lock. [`HANDOFF.md`](HANDOFF.md) explains each
+stage and the specific failure it exists to prevent. Read section 5 before changing
 anything — several ideas that look obviously correct were tried on hardware and failed.
 
 ## Quick start
@@ -57,7 +66,7 @@ changes — downloading it to the PC does nothing.
 Keep `BRIGHTNESS` low (12–45). An overdriven LED clips to white on camera, and white has no
 hue. The code refuses values above 70, which can damage the device.
 
-### 2a. PC receiver
+### 2. Receiver (PC + webcam)
 
 ```bash
 pip install opencv-python numpy
@@ -74,7 +83,7 @@ python pc_receiver.py --camera 0
 Press `q` to quit. The HUD shows live telemetry; [`HANDOFF.md`](HANDOFF.md) section 4
 explains how to read it.
 
-### 2b. Android receiver
+## Bonus: Android receiver
 
 Requires Android 7.0 (API 24) or newer with a camera. Open the `android/` folder in Android
 Studio and Run, or build from the command line:
@@ -83,18 +92,16 @@ Studio and Run, or build from the command line:
 cd android && ./gradlew :app:assembleDebug
 ```
 
-Details, the HUD glossary and performance notes are in
-[`android/README.md`](android/README.md).
-
-## Tests
-
-The Android port's receiver core is plain Kotlin and is tested without a device. The suite
-includes CRC golden vectors, protocol round-trips, and a synthetic-frame harness with noise,
-dropped frames and a warm decoy object:
+The receiver core is plain Kotlin and is tested without a device. The suite includes CRC
+golden vectors, protocol round-trips, and a synthetic-frame harness with noise, dropped
+frames and a warm decoy object:
 
 ```bash
 cd android && ./gradlew :core:test
 ```
+
+Details, the HUD glossary and performance notes are in
+[`android/README.md`](android/README.md).
 
 ## Open problems
 
@@ -103,6 +110,7 @@ cd android && ./gradlew :core:test
   upgraded to green when a clean copy arrives.
 - Very washed-out lighting can lose the blob entirely.
 - Sharp close focus, where individual LEDs resolve as separate dots, was never fully handled.
+- The message is hardcoded in the sender.
 - The Android app has no send mode yet (spec section 3.3).
 
 Ideas not yet tried are listed in [`HANDOFF.md`](HANDOFF.md) section 8.

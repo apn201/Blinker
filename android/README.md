@@ -1,5 +1,8 @@
 # Blinker — Atom Matrix Optical Link, Android port
 
+A bonus. The project itself is the sender and PC receiver in the repo root (see
+[`../README.md`](../README.md)); this app was added after the deadline was extended.
+
 An Android port of the PC receiver in `../pc_receiver.py`. The phone camera watches a
 blinking light source (an M5Stack Atom Matrix, or any sender that speaks the protocol)
 and reconstructs the transmitted text, with the same live telemetry as the PC HUD.
