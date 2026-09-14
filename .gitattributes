@@ -1,2 +1,12 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# The Gradle wrapper script must keep LF endings or it fails on Linux/macOS/CI
+# (this machine's git has core.autocrlf=true, which would otherwise convert it).
+gradlew text eol=lf
+*.bat text eol=crlf
+
+# Binaries
+*.jar binary
+*.apk binary
+*.png binary

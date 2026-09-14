@@ -1,0 +1,18 @@
+# IDE
+.idea/
+*.iml
+
+# Android / Gradle (android/.gitignore covers the same inside that folder)
+android/.gradle/
+android/.kotlin/
+android/**/build/
+android/local.properties
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
