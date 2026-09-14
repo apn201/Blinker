@@ -51,7 +51,7 @@ From the command line (`android/` directory):
 If `JAVA_HOME` on your shell points at an old JDK, use Studio's JBR explicitly:
 
 ```bash
-export JAVA_HOME="D:/Program Files/Android/Android Studio/jbr"
+export JAVA_HOME="/path/to/Android Studio/jbr"
 ```
 
 The debug APK lands at `app/build/outputs/apk/debug/app-debug.apk`. Install it with
@@ -148,8 +148,8 @@ clear via window insets.
 - CameraX **1.6.2**, `ImageAnalysis`, `STRATEGY_KEEP_ONLY_LATEST`, `ResolutionSelector`
   targeting 640×480, back camera. 1.6.x is required rather than cosmetic: CameraX 1.3.x
   ships native libs that are not 16 KB page-size aligned, which makes Android 15+ show an
-  "app isn't 16 KB compatible" dialog. Verified with `readelf`-equivalent inspection: every
-  packaged `.so` now reports `LOAD p_align=0x4000`.
+  "app isn't 16 KB compatible" dialog. Every packaged `.so` reports `LOAD p_align=0x4000`;
+  check any build with `python tools/check_16kb_alignment.py app/build/outputs/apk/debug/app-debug.apk`.
 - Whatever resolution the camera actually delivers, the conversion subsamples so the
   working frame's long side is ~640 px (`YuvToHsv.TARGET_LONG_SIDE`). The core's constants
   are all in pixels and tuned around 640×480, and cameras do not reliably honour a

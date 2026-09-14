@@ -12,8 +12,8 @@ Ground truth for behaviour is the Python source in this repo:
 `pc_receiver.py` (PC, OpenCV). This document explains the why. The Python is
 the what. When they disagree, the Python wins and this document has a bug.
 
-`HANDOFF.md` and `element14_blog_post.md` have the project history and the
-list of things that failed on real hardware. Section 6 below repeats the ones
+`HANDOFF.md` has the project history and the list of things that failed on
+real hardware. Section 6 below repeats the ones
 that matter for a port.
 
 ## 0. Scope

@@ -22,6 +22,7 @@ Files:
 |---|---|---|
 | `atom_matrix_sender.py` | the Atom, via UIFlow2 MicroPython | paste into the UIFlow2 **code editor**, not Blockly |
 | `pc_receiver.py` | PC | `pip install opencv-python numpy`, then `python pc_receiver.py` |
+| `android/` | Android phone | Kotlin/CameraX port of the receiver, see `android/README.md` |
 
 **Re-push the sender to the DEVICE whenever it changes.** Downloading it to the
 PC does nothing. This has caused confusion more than once — a screenshot showing
@@ -179,8 +180,8 @@ are commented with the specific failure each one prevents.
   only detected.
 - A wider header CRC to cut the false-header rate, which is currently the
   main source of spurious chunk attempts.
-- An Android port (a separate spec, `ANDROID_PORT_SPEC.md`, was written earlier
-  in the project; it predates the current protocol and needs updating).
+- Send mode for the Android app (`ANDROID_PORT_SPEC.md` section 3.3). The
+  receiver side of the port now exists in `android/`.
 
 ## 9. Working style that helped
 

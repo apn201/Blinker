@@ -4,11 +4,12 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.hardware.camera2.CaptureRequest
+import android.hardware.display.DisplayManager
 import android.os.Bundle
 import android.util.Log
 import android.util.Size
 import android.view.Gravity
-import android.view.View
+import android.view.Surface
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
@@ -18,6 +19,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.camera2.interop.Camera2CameraControl
 import androidx.camera.camera2.interop.CaptureRequestOptions
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -38,6 +40,10 @@ import java.util.concurrent.Executors
  * Receive screen: CameraX ImageAnalysis feeds each frame (as an upright HSV frame) to the
  * pure-Kotlin core Receiver; the result drives the HUD overlay. See ANDROID_PORT_SPEC
  * sections 3 and 4. Send mode (spec 3.3) is a separate, optional phase and not wired here.
+ *
+ * Threading: the Receiver is not thread-safe and is only ever touched on the analyzer
+ * thread. UI actions that need a reset set [resetRequested]; the analyzer performs it at
+ * the start of its next frame.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -46,22 +52,43 @@ class MainActivity : AppCompatActivity() {
     private lateinit var controlBar: LinearLayout
     private lateinit var aeButton: Button
 
-    private val receiver = Receiver()
+    private val receiver = Receiver()                 // analyzer thread only
     private lateinit var analysisExecutor: ExecutorService
 
     private var camera: Camera? = null
+    private var previewUseCase: Preview? = null
+    private var analysisUseCase: ImageAnalysis? = null
     private var lensFacing = CameraSelector.LENS_FACING_BACK
 
     @Volatile private var aeAwbEnabled = true
-    private var appliedLock: Boolean? = null
+    @Volatile private var appliedLock: Boolean? = null
+    @Volatile private var resetRequested = false
 
-    private val frameTimes = ArrayDeque<Long>()   // fps, analyzer thread only
+    private val frameTimes = ArrayDeque<Long>()       // fps, analyzer thread only
+    private var lastRotationDegrees = -1              // analyzer thread only
+    private var loggedFrames = 0                      // analyzer thread only
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) startCamera()
             else Toast.makeText(this, "Camera permission is required to receive", Toast.LENGTH_LONG).show()
         }
+
+    /**
+     * The activity survives rotation (configChanges), so CameraX must be told the new display
+     * rotation explicitly. A DisplayListener also catches 180-degree flips, which do not
+     * change the screen size and so never produce a configuration change.
+     */
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = Unit
+        override fun onDisplayRemoved(displayId: Int) = Unit
+        override fun onDisplayChanged(displayId: Int) {
+            val display = previewView.display ?: return
+            if (display.displayId != displayId) return
+            previewUseCase?.targetRotation = display.rotation
+            analysisUseCase?.targetRotation = display.rotation
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -98,6 +125,16 @@ class MainActivity : AppCompatActivity() {
         ) startCamera() else permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
+    override fun onStart() {
+        super.onStart()
+        getSystemService(DisplayManager::class.java).registerDisplayListener(displayListener, null)
+    }
+
+    override fun onStop() {
+        getSystemService(DisplayManager::class.java).unregisterDisplayListener(displayListener)
+        super.onStop()
+    }
+
     private fun buildControlBar(): LinearLayout {
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -114,7 +151,7 @@ class MainActivity : AppCompatActivity() {
             return b
         }
         mk("Re-acquire") {
-            receiver.fullReset()
+            resetRequested = true
             Toast.makeText(this, "Re-acquiring from scratch", Toast.LENGTH_SHORT).show()
         }
         aeButton = mk("AE/AWB: On") {
@@ -125,20 +162,28 @@ class MainActivity : AppCompatActivity() {
         mk("Flip") {
             lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK)
                 CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
-            receiver.fullReset()
+            resetRequested = true
             startCamera()
         }
         return bar
+    }
+
+    private fun currentRotation(): Int {
+        previewView.display?.let { return it.rotation }
+        @Suppress("DEPRECATION")
+        return windowManager.defaultDisplay?.rotation ?: Surface.ROTATION_0
     }
 
     private fun startCamera() {
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
             val provider = future.get()
+            val rotation = currentRotation()
 
-            val preview = Preview.Builder().build().also {
-                it.surfaceProvider = previewView.surfaceProvider
-            }
+            val preview = Preview.Builder()
+                .setTargetRotation(rotation)
+                .build()
+                .also { it.surfaceProvider = previewView.surfaceProvider }
             // 640x480 is what the reference works at; higher is slower and gains nothing.
             val resolution = ResolutionSelector.Builder()
                 .setResolutionStrategy(
@@ -148,6 +193,7 @@ class MainActivity : AppCompatActivity() {
             val analysis = ImageAnalysis.Builder()
                 .setResolutionSelector(resolution)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setTargetRotation(rotation)
                 .build()
             analysis.setAnalyzer(analysisExecutor) { proxy -> analyze(proxy) }
 
@@ -155,6 +201,8 @@ class MainActivity : AppCompatActivity() {
             try {
                 provider.unbindAll()
                 camera = provider.bindToLifecycle(this, selector, preview, analysis)
+                previewUseCase = preview
+                analysisUseCase = analysis
                 appliedLock = null
             } catch (e: Exception) {
                 Toast.makeText(this, "Camera bind failed: ${e.message}", Toast.LENGTH_LONG).show()
@@ -175,67 +223,79 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun analyzeFrame(proxy: ImageProxy) {
-        run {
-            val now = System.currentTimeMillis()
-            frameTimes.addLast(now)
-            while (frameTimes.isNotEmpty() && now - frameTimes.first() > 1000) frameTimes.removeFirst()
-            val fps = frameTimes.size
+        // Resets happen here, on the only thread that touches the Receiver. A rotation change
+        // also forces one: the lock box and flicker history are in the old frame's pixel
+        // coordinates and would point at the wrong place in the rotated frame.
+        val rotationDegrees = proxy.imageInfo.rotationDegrees
+        if (resetRequested || (lastRotationDegrees != -1 && rotationDegrees != lastRotationDegrees)) {
+            resetRequested = false
+            receiver.fullReset()
+        }
+        lastRotationDegrees = rotationDegrees
 
-            val t0 = System.nanoTime()
-            val frame = YuvToHsv.convert(proxy, proxy.imageInfo.rotationDegrees)
-            val yuvMs = ((System.nanoTime() - t0) / 1_000_000L).toInt()
-            val result = receiver.process(frame, now)
-            val frameMs = ((System.nanoTime() - t0) / 1_000_000L).toInt()
-            if (loggedFrames < 12) {
-                loggedFrames++
-                Log.i(TAG, "camera ${proxy.width}x${proxy.height} rot=${proxy.imageInfo.rotationDegrees}" +
-                        " -> working ${frame.width}x${frame.height}, total ${frameMs}ms" +
-                        " (yuv ${yuvMs}ms, ${receiver.timingSummary()}) flickArea=${result.flickerArea}")
-            }
+        val now = System.currentTimeMillis()
+        frameTimes.addLast(now)
+        while (frameTimes.isNotEmpty() && now - frameTimes.first() > 1000) frameTimes.removeFirst()
+        val fps = frameTimes.size
 
-            val dec = receiver.activeDecoder()
-            val a = receiver.assembler
-            overlay.update(
-                HudState(
-                    box = result.box,
-                    srcW = frame.width,
-                    srcH = frame.height,
-                    locked = result.locked,
-                    active = result.active,
-                    cls = result.cls,
-                    fps = fps,
-                    frameMs = frameMs,
-                    msPerBit = dec.measuredMsPerBit(),
-                    colorsDesc = receiver.colors.describe(),
-                    boxV = result.v,
-                    boxSwing = result.swing,
-                    statesSeen = result.statesSeen,
-                    reason = result.reason,
-                    symA = receiver.symCount["A"] ?: 0,
-                    symB = receiver.symCount["B"] ?: 0,
-                    symSync = receiver.symCount["SYNC"] ?: 0,
-                    bufferBits = dec.collectedBits.size,
-                    totalBits = dec.totalBits,
-                    hdrTries = dec.headerAttempts,
-                    chunkTries = dec.chunkAttempts,
-                    lastHeader = dec.lastHeader,
-                    polarity = receiver.polarity,
-                    progress = a.progress(),
-                    progressFrac = a.total?.let { a.chunks.size.toDouble() / it } ?: 0.0,
-                    chunksOk = receiver.chunksOk,
-                    chunksSeen = receiver.chunksSeen,
-                    segments = a.richSegments(8)
-                )
+        val t0 = System.nanoTime()
+        val frame = YuvToHsv.convert(proxy, rotationDegrees)
+        val yuvMs = ((System.nanoTime() - t0) / 1_000_000L).toInt()
+        val result = receiver.process(frame, now)
+        val frameMs = ((System.nanoTime() - t0) / 1_000_000L).toInt()
+        if (loggedFrames < 12) {
+            loggedFrames++
+            Log.i(TAG, "camera ${proxy.width}x${proxy.height} rot=$rotationDegrees" +
+                    " -> working ${frame.width}x${frame.height}, total ${frameMs}ms" +
+                    " (yuv ${yuvMs}ms, ${receiver.timingSummary()}) flickArea=${result.flickerArea}")
+        }
+
+        val dec = receiver.activeDecoder()
+        val a = receiver.assembler
+        overlay.update(
+            HudState(
+                box = result.box,
+                srcW = frame.width,
+                srcH = frame.height,
+                locked = result.locked,
+                active = result.active,
+                cls = result.cls,
+                fps = fps,
+                frameMs = frameMs,
+                msPerBit = dec.measuredMsPerBit(),
+                colorsDesc = receiver.colors.describe(),
+                boxV = result.v,
+                boxSwing = result.swing,
+                statesSeen = result.statesSeen,
+                reason = result.reason,
+                symA = receiver.symCount["A"] ?: 0,
+                symB = receiver.symCount["B"] ?: 0,
+                symSync = receiver.symCount["SYNC"] ?: 0,
+                bufferBits = dec.collectedBits.size,
+                totalBits = dec.totalBits,
+                hdrTries = dec.headerAttempts,
+                chunkTries = dec.chunkAttempts,
+                lastHeader = dec.lastHeader,
+                polarity = receiver.polarity,
+                progress = a.progress(),
+                progressFrac = a.total?.let { a.chunks.size.toDouble() / it } ?: 0.0,
+                chunksOk = receiver.chunksOk,
+                chunksSeen = receiver.chunksSeen,
+                segments = a.richSegments(8)
             )
+        )
 
-            val desired = aeAwbEnabled && result.locked
-            if (desired != appliedLock) {
-                appliedLock = desired
-                ContextCompat.getMainExecutor(this).execute { applyAeAwbLock(desired) }
-            }
+        val desired = aeAwbEnabled && result.locked
+        if (desired != appliedLock) {
+            appliedLock = desired
+            ContextCompat.getMainExecutor(this).execute { applyAeAwbLock(desired) }
         }
     }
 
+    // androidx.annotation.OptIn, not kotlin.OptIn: ExperimentalCamera2Interop is an androidx
+    // RequiresOptIn marker, enforced by Android lint (UnsafeOptInUsageError) rather than by
+    // the Kotlin compiler - which is why kotlin.OptIn only produced a "no effect" warning.
+    @androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
     private fun applyAeAwbLock(lock: Boolean) {
         val cam = camera ?: return
         try {
@@ -254,8 +314,6 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         analysisExecutor.shutdown()
     }
-
-    private var loggedFrames = 0
 
     private companion object {
         const val TAG = "Blinker"

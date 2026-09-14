@@ -1,29 +1,18 @@
 # ==========================================================
 # ATOM MATRIX OPTICAL LINK - SENDER (UIFlow2 MicroPython)
-# STRUCTURAL VERSION. Still one bit per frame - deliberately slow and safe.
-# All 25 LEDs are spent on making that ONE bit unmistakable, not on speed.
+# One bit per frame - deliberately slow and safe. All 25 LEDs show the SAME
+# colour at a time; there is no spatial pattern inside the matrix to read.
 #
-# Every frame looks like this (5x5):
-#   Whole matrix one colour: off = bit separator, green = 1, blue = 0.
+#   dark (all off) -> bit separator
+#   green          -> one symbol
+#   blue           -> the other symbol
 #
-# Why this beats the old "whole matrix is one colour" scheme:
+# Which colour means 1 is not fixed by the protocol: the receivers decode both
+# polarities and let the chunk CRC decide. (This sender uses green = 1.)
 #
-#  1. The corners are a fixed colour reference visible IN THE SAME FRAME as
-#     the data, under the same light, in the same exposure. The receiver
-#     classifies by the DIFFERENCE between interior and corners, never
-#     against remembered absolute hues. Daylight shifting every hue by 20
-#     degrees shifts both equally and the difference is unchanged. The
-#     "magenta stopped working when the sun came up" failure cannot happen
-#     by construction - there is nothing left to drift out of sync with.
-#
-#  2. Corners + uniform interior is a STRUCTURE, like a QR finder pattern.
-#     The receiver locks onto geometry, not "largest blob of roughly the
-#     right hue". A printer logo is the wrong shape and gets rejected no
-#     matter how perfect its colour is.
-#
-#  3. The 21 interior cells all carry the SAME bit - 21 independent
-#     measurements of one bit, majority-voted. Blur, glare on a few cells,
-#     or a finger over a corner cost accuracy instead of costing the bit.
+# An earlier version used corner reference LEDs and a structured 5x5 pattern.
+# It was abandoned because the diffuser smears any spatial structure - see
+# HANDOFF.md section 5 before reintroducing anything like it.
 #
 # Paste into the UiFlow2 code editor, Run. Re-push to the DEVICE whenever
 # this file changes - downloading it to the PC does nothing by itself.
@@ -62,11 +51,6 @@ def pack(r, g, b):
     return (r << 16) | (g << 8) | b
 
 
-# Chosen so the interior-minus-corner hue difference is symmetric and far apart:
-#   SYNC  ->   0   (interior identical to corners)
-#   ONE   -> -45   (green vs azure)
-#   ZERO  -> +45   (magenta vs azure)
-# Verified against a real colour-space conversion, not assumed from theory.
 # TWO colours, and the bit separator is the matrix going DARK.
 #
 #   SYNC  -> all LEDs off
