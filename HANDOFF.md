@@ -177,6 +177,28 @@ are commented with the specific failure each one prevents.
   blob entirely.
 - **Sharp close focus**, where individual LEDs resolve as separate dots rather
   than one blob, was never fully handled.
+- **Range is capped by absolute pixel thresholds, not by physics.** At distance
+  the transmitter is a small dot, and it is rejected before any behaviour test
+  runs: `find_and_read` needs `area >= FLICKER_MIN_AREA` (150 px^2) and both
+  sides `>= 10` px, and `BLOB_MIN_SAT = 85` is a hard floor that never relaxes
+  (unlike the mask floor, which `SatAdapter` adapts). `FlickerMap` measures at
+  quarter scale, so a small dot's flicker metric is diluted by the dark pixels
+  averaged in with it. On a 640×480 webcam (no capture resolution is
+  requested) with a ~60° lens, a 24 mm matrix is about 14 px at 1 m and 9 px
+  at 1.5 m, which is where the wall is. Measure your own camera before
+  trusting those numbers.
+
+  The shape filter is NOT the problem here: a dot is square and fills its
+  bounding box, so it passes both checks. Those exist to reject a large
+  diagonal cable and can stay.
+
+  Untested idea: apply the shape checks only above ~14 px, lower the size and
+  saturation floors for small candidates, and let the tracker's existing
+  two-hue + rhythm test do the rejecting. Requesting a higher capture
+  resolution would buy distance for free, but every constant here is in pixels
+  and tuned for 640×480, so they would need normalising to frame width first.
+  Expect more junk candidates (router LEDs, glints) and therefore slower
+  acquisition. **Not tested on hardware — do not assume it works.**
 
 ## 8. Ideas not yet tried
 

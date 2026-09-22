@@ -109,6 +109,13 @@ Details, the HUD glossary and performance notes are in
 - Chunk CRC failures still happen at a low rate. Unverified text is shown in amber and
   upgraded to green when a clean copy arrives.
 - Very washed-out lighting can lose the blob entirely.
+- **Range is capped by a pixel floor, not by physics.** Detection requires a blob of
+  at least 150 px² with both sides at least 10 px, so on a 640×480 webcam the matrix
+  falls below the floor at roughly 1–1.5 m and is never offered as a candidate — even
+  when two hues and the blink are plainly visible to the eye. The behaviour tests that
+  actually identify the transmitter (two hues at one spot, a 120–900 ms rhythm) do not
+  need that many pixels. Diagnosed by reading the code, not yet tested on hardware; see
+  `HANDOFF.md` section 7.
 - Sharp close focus, where individual LEDs resolve as separate dots, was never fully handled.
 - The message is hardcoded in the sender.
 - The Android app has no send mode yet (spec section 3.3).
