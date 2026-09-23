@@ -1,4 +1,4 @@
-# Blinker — Atom Matrix Optical Link, Android port
+# Blinker: Atom Matrix Optical Link, Android port
 
 A bonus. The project itself is the sender and PC receiver in the repo root (see
 [`../README.md`](../README.md)); this app was added after the deadline was extended.
@@ -33,13 +33,13 @@ without a device or emulator.
 
 ## Building
 
-**In Android Studio: `File → Open…` and select this `android` folder** (not the parent
+In Android Studio, `File → Open…` and select this `android` folder (not the parent
 `Blinker` folder, which only holds the Python). Then Build/Run as usual. No JDK or Gradle
-settings to change — the toolchain is AGP 9.3.2 / Gradle 9.7.1 / compileSdk 36, which runs
+settings to change. The toolchain is AGP 9.3.2 / Gradle 9.7.1 / compileSdk 36, which runs
 on Android Studio's bundled JBR (Java 25).
 
-Toolchain notes: AGP 9 has **built-in Kotlin support**, so the `:app` module deliberately
-does *not* apply `org.jetbrains.kotlin.android` — doing so clashes with the `kotlin`
+Toolchain notes: AGP 9 has built-in Kotlin support, so the `:app` module deliberately
+does *not* apply `org.jetbrains.kotlin.android`. Doing so clashes with the `kotlin`
 extension AGP registers itself. `:core` is a plain Kotlin/JVM library and uses
 `kotlin("jvm")`. Both target JVM 17 bytecode via `compilerOptions`, with no separate JDK
 toolchain required.
@@ -70,13 +70,13 @@ not be committed.
 ./gradlew :core:test
 ```
 
-- `CoreTest` — spec 5.1: CRC golden vectors, packet round-trip (both polarities),
+- `CoreTest` (spec 5.1): CRC golden vectors, packet round-trip (both polarities),
   ColorSplitter (fit / nearest classify / freeze / post-fit outlier rejection / hue wrap),
   Decoder 13-identical-bits, MAX_RUN-in-bits, Assembler message-length defence.
-- `PerfTest` — throughput guard: the whole pipeline at the real 480×640 working size.
-  Currently **13.9 ms/frame (~72 fps)** on a desktop JVM; the test fails above 25 ms/frame,
+- `PerfTest`, the throughput guard: the whole pipeline at the real 480×640 working size.
+  Currently 13.9 ms/frame (~72 fps) on a desktop JVM; the test fails above 25 ms/frame,
   so reintroducing per-frame allocation or a full-frame sweep gets caught.
-- `HarnessTest` — spec 5.2: the full image pipeline recovers the message from 60×60
+- `HarnessTest` (spec 5.2): the full image pipeline recovers the message from 60×60
   synthetic frames carrying a warm decoy (a red strip that brightens with the LED), a noisy
   background and per-pixel noise. Sweeps: 2% and 5% per-frame misclassification, 5% dropped
   frames, and an auto-exposure recovery ramp. All recover the full message; the clean scene
@@ -84,12 +84,12 @@ not be committed.
 
 ## Image processing: pure Kotlin, not OpenCV
 
-The spec allows either OpenCV-for-Android or a pure-Kotlin implementation. **This port is
-pure Kotlin** (`core/ImageOps.kt`): threshold, separable box dilate/erode (a rectangular
+The spec allows either OpenCV-for-Android or a pure-Kotlin implementation. This port is
+pure Kotlin (`core/ImageOps.kt`): threshold, separable box dilate/erode (a rectangular
 structuring element is separable, so morphology is O(w·h·k)), morphological close, and
 8-connected components. Reasons: `core` stays free of Android/OpenCV so its tests run on a
 bare JVM; there is no native-library packaging; and at ~640×480 the cost is acceptable
-(measure on a mid-range phone, not a flagship — spec 3.2).
+(measure on a mid-range phone, not a flagship; spec 3.2).
 
 ## Performance
 
@@ -102,9 +102,9 @@ What this cost and where it went (all measured, not estimated):
 
 | fix | effect |
 |---|---|
-| Bulk-copy YUV planes into byte arrays instead of ~921k `ByteBuffer.get(index)` calls per frame | YUV→HSV **275 ms → ~5 ms** |
+| Bulk-copy YUV planes into byte arrays instead of ~921k `ByteBuffer.get(index)` calls per frame | YUV→HSV 275 ms → ~5 ms |
 | Reuse every large buffer; no per-frame allocation anywhere in the pipeline | ended continuous GC (was `mark compact GC freed 6912KB` every frame) |
-| Histogram instead of sorting a boxed `Integer` list in `peakSat` and `BoxReader` | `peakSat` **~540 ms → 1 ms** |
+| Histogram instead of sorting a boxed `Integer` list in `peakSat` and `BoxReader` | `peakSat` ~540 ms → 1 ms |
 | Confine threshold/close/connected-components to the flickering region | detect is proportional to the blinking area, not the frame |
 
 **Testing on an emulator is misleading.** On a Pixel emulator with Android Studio's
@@ -125,20 +125,20 @@ LAST HDR idx 0 total 4 len 8  plausible yes  crc yes
 PROGRESS 3/4  chunks_ok 7/9 (78%)  pol A1
 ```
 
-- **colours X|Y gapN** — the two learned colours and the gap between them. On real hardware
+- `colours X|Y gapN`: the two learned colours and the gap between them. On real hardware
   the gap has been as low as 20 (the diffuser blends white in); `learning (N samples)`
   forever means the fit thresholds are too strict. `FROZEN` = the fit stopped adapting after
   a chunk verified.
-- **balance** — near 50% is healthy; heavily lopsided means the split is wrong.
-- **hdr_tries** climbing with **chunk_tries** at 0 — bits are being read but never form a
+- `balance`: near 50% is healthy; heavily lopsided means the split is wrong.
+- `hdr_tries` climbing with `chunk_tries` at 0: bits are being read but never form a
   valid header. A 1-byte header CRC passes ~1 in 256 random windows, and a new window is
   tested every bit, so false headers are expected, not exceptional.
-- **LAST HDR** — `plausible no` with garbage numbers means the bit stream is misaligned;
+- `LAST HDR`: `plausible no` with garbage numbers means the bit stream is misaligned;
   `plausible yes crc no` means it is close and noisy.
 - The lock box is coloured by the current symbol (green A, blue B, amber SYNC, grey/dashed
   while acquiring). The decoded message is drawn verified (green) / unverified (amber) /
   missing (grey), so a partly wrong chunk you can read beats nothing.
-- **RES / ms per frame** — the working frame size and how long one frame took end to end.
+- `RES` / `ms per frame`: the working frame size and how long one frame took end to end.
 
 The HUD is laid out for a portrait phone: all sizes are density-scaled, the telemetry text
 auto-shrinks until the longest line fits the screen width, each panel is sized to the text
@@ -162,18 +162,18 @@ clear via window insets.
   frame is rotated upright in the same pass so the core's pixel-space constants stay valid
   and the HUD box maps with a plain fill-centre scale.
 - AE/AWB are locked once the receiver has a lock (toggle in the bottom bar, default on),
-  via Camera2 interop. Not required for correctness — the relative-brightness threshold
-  copes — but it stops exposure hunting after each dark phase.
+  via Camera2 interop. Not required for correctness (the relative-brightness threshold
+  copes), but it stops exposure hunting after each dark phase.
 - The screen is kept on while receiving. Torch off.
-- Controls: **Re-acquire** (full reset), **AE/AWB** toggle, **Flip** camera.
+- Controls: Re-acquire (full reset), AE/AWB toggle, Flip camera.
 
 ## Deviations from the Python reference
 
 All intentional; the synthetic harness passes with them.
 
-1. **Pure-Kotlin image ops instead of OpenCV** (see above). Blob **area** is the connected
-   pixel count and **extent** is `area / bounding-box area` — pixel-based, vs OpenCV's
-   polygon `contourArea`. Equivalent for solid blobs; may differ slightly on ragged edges.
+1. **Pure-Kotlin image ops instead of OpenCV** (see above). Blob area is the connected
+   pixel count and extent is `area / bounding-box area`, both pixel-based, against
+   OpenCV's polygon `contourArea`. Equivalent for solid blobs; may differ slightly on ragged edges.
 2. **FlickerMap** downscales the S and V planes and averages them, rather than downscaling
    BGR and then converting to HSV. The metric (`s·v/255`) and threshold are unchanged.
 3. **Constants follow `pc_receiver.py`, not the spec's section 8 table**, where they

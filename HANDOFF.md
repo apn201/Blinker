@@ -1,7 +1,7 @@
-# Atom Matrix Optical Link — project handoff
+# Atom Matrix Optical Link: project handoff
 
 Read this before changing anything. Section 5 is the important part: it lists
-approaches that were tried and **failed on real hardware**, and why. Several of
+approaches that were tried and failed on real hardware, and why. Several of
 them look obviously correct on paper, which is exactly why they keep getting
 re-invented and keep wasting days.
 
@@ -14,7 +14,7 @@ device in the frame, reads the colours, and reconstructs text.
 Entry for element14's Project14 "Make a Connection". Write-up:
 https://community.element14.com/challenges-projects/project14/b/make-a-connection/posts/blink_2d00_optical_2d00_one_2d00_way_2d00_communication_2d00_m5stack_2d00_atom_2d00_matrix
 
-Status: **works, imperfectly.** Full messages decode at about 1.5 m indoors. It
+Status: works, imperfectly. Full messages decode at about 1.5 m indoors. It
 still loses lock or misreads occasionally in cluttered scenes. It is not
 finished.
 
@@ -32,7 +32,7 @@ Bonus, added after the deadline was extended:
 | `android/` | Android phone | Kotlin/CameraX port of `pc_receiver.py`, see `android/README.md`. Where it disagrees with the Python, the Python wins. |
 
 **Re-push the sender to the DEVICE whenever it changes.** Downloading it to the
-PC does nothing. This has caused confusion more than once — a screenshot showing
+PC does nothing. This has caused confusion more than once. A screenshot showing
 old behaviour usually means the device is still running the old code.
 
 ## 2. The protocol
@@ -57,7 +57,7 @@ CRC-8, poly 0x07, no reflection, no final XOR. Header is a fixed 40 bits. The
 sender loops the whole message forever; there is no end signal and no
 retransmit request, because there is no return channel.
 
-Which colour means 1 is **not** defined by the protocol. The receiver decodes
+Which colour means 1 is not defined by the protocol. The receiver decodes
 both polarities in parallel and lets the chunk CRC decide. Do not "fix" this by
 hardcoding it.
 
@@ -65,25 +65,25 @@ hardcoding it.
 
 Order matters. Each stage exists because of a specific failure.
 
-1. **FlickerMap** — per-pixel colour change over ~10 frames, downscaled 4x.
+1. **FlickerMap**: per-pixel colour change over ~10 frames, downscaled 4x.
    Detection happens only inside regions that are actually changing. Static
    objects never become candidates at all.
-2. **Shape filter** — aspect ratio ≤ 1.9 AND the blob must fill ≥ 50% of its
+2. **Shape filter**: aspect ratio ≤ 1.9 AND the blob must fill ≥ 50% of its
    bounding box. The extent test is the one that matters: a *diagonal* cable
    has a bounding box of aspect ~1.31 (passes an aspect test easily) but fills
    only ~16% of it.
-3. **Colour screen** — once `ColorSplitter` has learned the two colours, a blob
+3. **Colour screen**: once `ColorSplitter` has learned the two colours, a blob
    must match one of them to be a candidate at all.
-4. **Tracker** — a persistent lock, not a per-frame decision. Once locked, only
+4. **Tracker**: a persistent lock, not a per-frame decision. Once locked, only
    candidates near the lock are considered. Acquiring needs 8 frames of
    agreement *and* two distinct hues at that spot *and* a blink rhythm inside
    120–900 ms. Moving the lock needs 24.
-5. **ColorSplitter** — learns the two colours from the transmitter itself,
+5. **ColorSplitter**: learns the two colours from the transmitter itself,
    unnamed ("A"/"B"). Splits the observed hue distribution at its widest gap.
    Freezes once a chunk verifies. Disowns its own fit after 32 identical bits
    in a row.
-6. **Decoder** — run-length over symbols, sliding 40-bit header search.
-7. **Assembler** — verified and unverified chunks kept separately.
+6. **Decoder**: run-length over symbols, sliding 40-bit header search.
+7. **Assembler**: verified and unverified chunks kept separately.
 
 ## 4. Live telemetry (read this before debugging anything)
 
@@ -99,29 +99,29 @@ LAST HDR idx:0 total:4 len:8 plausible:True crc:True
 
 How to read it:
 
-- `colours X|Y gapN` — the learned pair. **On real hardware this gap has been
-  measured as low as 20**, not the 60 the sender emits; the diffuser blends
+- `colours X|Y gapN`: the learned pair. On real hardware this gap has been
+  measured as low as 20, not the 60 the sender emits; the diffuser blends
   white in and pulls the hues together. `learning (N samples)` forever means
   the gap thresholds are too strict.
-- `balance` — near 50% is healthy. Heavily lopsided means the split is wrong
+- `balance`: near 50% is healthy. Heavily lopsided means the split is wrong
   even if it passed the gap test.
-- `hdr_tries` — climbing fast with `chunk_tries` at 0 means bits are being read
-  but never form a valid header. **A 1-byte header CRC means a random window
-  passes about 1 in 256 tries**, and a new window is tested every bit, so false
+- `hdr_tries`: climbing fast with `chunk_tries` at 0 means bits are being read
+  but never form a valid header. A 1-byte header CRC means a random window
+  passes about 1 in 256 tries, and a new window is tested every bit, so false
   headers are expected, not exceptional.
-- `LAST HDR` — `plausible:False` with garbage numbers means the bit stream is
+- `LAST HDR`: `plausible:False` with garbage numbers means the bit stream is
   misaligned. `plausible:True crc:False` means it's close and noisy.
 
 Console prints per-chunk results, including the text of failed chunks.
 
-## 5. Failed approaches — do not re-try these without reading why
+## 5. Failed approaches (do not re-try these without reading why)
 
 **Spatial patterns inside the matrix** (reference band + dark separator row,
 corner markers, QR-style finder). Repeatedly attractive, repeatedly broken.
 The diffuser smears everything: a separator row that is pitch black in a
 synthetic render is barely visible in a photo. A version tuned on rendered
 images rejected the actual device while passing every test. Single-LED corners
-are worse still — camera blur bleeds neighbouring LEDs into them until the
+are worse still: camera blur bleeds neighbouring LEDs into them until the
 "reference" is mostly reading the data colour.
 
 **Fixed hue targets.** The camera does not render green at 60. Measured on one
@@ -130,14 +130,14 @@ that compares against a constant will work in the evening and fail in daylight.
 
 **Two independently adapting hue targets.** They drift toward each other and
 collapse: a misread pulls one target toward the other colour, which causes more
-misreads. Observed live — the target slid 150 → 131 and then onto a shirt print.
+misreads. Observed live: the target slid from 150 to 131 and then onto a shirt print.
 The current model learns both together and freezes once data flows.
 
 **On/off keying (light off = 0).** Auto-exposure ruins it: right after a bright
 flash, an "off" LED still reads bright, biasing every 0 toward 1.
 
 **Blink-check as a post-filter.** Detecting by appearance and then rejecting
-impostors afterwards does not work — by the time the check runs, the lock has
+impostors afterwards does not work: by the time the check runs, the lock has
 already moved. Flicker has to come *first*, at detection.
 
 **Trusting any chunk to define message length.** A false header claiming
@@ -150,7 +150,7 @@ several frames, so this fired constantly and destroyed good colour fits
 (`refit128` in the logs).
 
 **Assuming runs of identical bits are rare.** A header with `idx=0, total=4`
-legitimately contains **13 consecutive identical bits**. A limit of 14 tripped
+legitimately contains 13 consecutive identical bits. A limit of 14 tripped
 on valid data.
 
 **One constant for two different measurements.** The empty void *between* hue
@@ -177,7 +177,7 @@ are commented with the specific failure each one prevents.
   blob entirely.
 - **Sharp close focus**, where individual LEDs resolve as separate dots rather
   than one blob, was never fully handled.
-- **Range is capped by absolute pixel thresholds, not by physics.** At distance
+- **Range is capped by the detector's pixel thresholds.** At distance
   the transmitter is a small dot, and it is rejected before any behaviour test
   runs: `find_and_read` needs `area >= FLICKER_MIN_AREA` (150 px^2) and both
   sides `>= 10` px, and `BLOB_MIN_SAT = 85` is a hard floor that never relaxes
@@ -198,13 +198,13 @@ are commented with the specific failure each one prevents.
   resolution would buy distance for free, but every constant here is in pixels
   and tuned for 640×480, so they would need normalising to frame width first.
   Expect more junk candidates (router LEDs, glints) and therefore slower
-  acquisition. **Not tested on hardware — do not assume it works.**
+  acquisition. Not tested on hardware, so do not assume it works.
 
 ## 8. Ideas not yet tried
 
 - A distinctive rhythm on the sync/dark phase (e.g. `110110110` rather than a
   plain alternation) so the transmitter can be identified by temporal signature
-  alone — the user's suggestion, and probably the strongest remaining idea.
+  alone. My own idea, and probably the strongest one left.
 - Forward error correction so a corrupted chunk can be repaired rather than
   only detected.
 - A wider header CRC to cut the false-header rate, which is currently the
@@ -214,7 +214,7 @@ are commented with the specific failure each one prevents.
 
 ## 9. Working style that helped
 
-Test against synthetic scenes before touching the camera — a rendered desk with
+Test against synthetic scenes before touching the camera. A rendered desk with
 an orange cable, red LEDs, a face, a shirt print and a flickering lamp caught
 most of these bugs before they reached hardware. But **be careful that the
 synthetic scene is honest**: rendering the separator row as pure black
